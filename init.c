@@ -232,7 +232,12 @@ int exe_cmd(char *cmd,int x) {
         }
 
         if (strcmp(args[0],"export")==0){
-            putenv(args[1]);
+            char *a=args[1];
+            /* */
+            while(*a!='=') a++;
+            *a='\0';
+            a=a+1;
+            setenv(args[1],a,1);
             return CONTINUE;
         }
 
