@@ -20,12 +20,14 @@ typedef struct cmd_order{ //文件重定向结构体
 int execute(char *args[]);
 int run_cmd(int x);
 int exe_cmd(char *cmd,int x);
+int echo(char **args);
 
 int num,direct_num;//num为被管道符隔开的命令数，direct_num为重定向命令数
 char cmds[MAX_ORDERS_NUM][MAX_LENGTH]={};//每一行分别装入被管道符隔开一条命令
-order orders[4*MAX_ORDERS_NUM]={};//储存所有文件重定向命令
+order orders[4*MAX_ORDERS_NUM]={};//储存所有文件重定向命令，从１开始
 int cmd_redirect[MAX_ORDERS_NUM][2]={};//分别记录每条命令对应的文件重定向命令在数组orders中的位置，比如第0条命令有2个文件重定向，那么
                                     //cmd_redirect[0][0]=１,cmd_redirect[0][1]=2
+int endflag=0;
 
 int main(){
     char input[MAX_INPUT];
@@ -111,7 +113,7 @@ int main(){
 
         if (!flag) continue;
 
-        if (run_cmd(num) == END) break;
+        if (run_cmd(num)==END) break;
 
     }
 }
@@ -123,13 +125,17 @@ run_cmd执行一条命令和在其之前的所有命令，
 */
     if (x<0) _exit(0);
     if (x==0 && cmd_redirect[0][0]==0){
-
-        return exe_cmd(cmds[0],x);
+        return exe_cmd(cmds[0],0);
     }
+
     int fd[2];
     int main_fd[2];
     pipe(main_fd);
     pid_t mpid=fork();
+    if (mpid<0){
+        printf("fork error in main fork\n");
+        _exit(0);
+    }
     if (mpid==0){
     /*
     创建两次进程是为了专门创建一个子进程来执行命令，
@@ -137,8 +143,19 @@ run_cmd执行一条命令和在其之前的所有命令，
     父进程正常返回。否则会出现返回后stdin被关闭
     无法读取的问题。
     */
+
+        if (x==0){
+
+            exe_cmd(cmds[0],x);
+
+            _exit(0);
+        }
         if (pipe(fd)==0){
             pid_t pid = fork();
+            if (mpid<0){
+                printf("fork error in sub fork\n");
+                _exit(0);
+            }
             if (pid == 0){
                 close(fd[0]);
                 close(fileno(stdout));
@@ -157,9 +174,14 @@ run_cmd执行一条命令和在其之前的所有命令，
                 waitpid(pid, NULL, 0);
                 exe_cmd(cmds[x],x);
                  _exit(0);
+            }
+
+        }
+        else{
+            printf("pipe error\n");
+            _exit(0);
         }
 
-    }
     }
     else{
         wait(NULL);
@@ -172,7 +194,40 @@ int exe_cmd(char *cmd,int x) {
         //printf("%d %d\n",cmd_redirect[x][0],cmd_redirect[x][1]);
         /*根据每条命令的重定向命令修改输入输出方向*/
         if (cmd_redirect[x][0]){
-            int j;
+            int j=cmd_redirect[x][1]-1;
+            if (strcmp(orders[j].direct,"<<")==0){
+
+                if (strcmp(orders[j].path,"EOF")) return CONTINUE;
+                int fdr[2];
+                pipe(fdr);
+                pid_t pid=fork();
+                if (pid<0){
+                    printf("fork error in redirection\n");
+                    _exit(0);
+                }
+                if (pid==0){
+                    //fflush(stdin);
+                    /**/
+                    close(fdr[0]);
+                    close(fileno(stdout));
+                    dup2(fdr[1],fileno(stdout));
+                    close(fdr[1]);
+
+                    char tmpinput[MAX_INPUT];
+                    int tmp=0;
+                    while (1){
+                    fgets(tmpinput,MAX_INPUT,stdin);
+                    if (!strcmp(tmpinput,"EOF\n")) break;
+                    printf("%s",tmpinput);
+                    }
+                    _exit(0);
+                }
+                else{
+                    close(fdr[1]);
+                    dup2(fdr[0],fileno(stdin));
+                    wait(NULL);
+                }
+            }
             for (j=cmd_redirect[x][0];j<cmd_redirect[x][1];j++){
                 //printf("%s %s\n",orders[j].direct,orders[j].path);
                 if (strcmp(orders[j].direct,">")==0){
@@ -181,9 +236,10 @@ int exe_cmd(char *cmd,int x) {
                 else if (strcmp(orders[j].direct,">>")==0){
                     freopen(orders[j].path,"a+",stdout);
                 }
-                else if (strcmp(orders[j].direct,"<")==0 || strcmp(orders[j].direct,"<<")==0){
+                else if (strcmp(orders[j].direct,"<")==0){
                     freopen(orders[j].path,"r",stdin);
                 }
+
             }
         }
 
@@ -234,17 +290,25 @@ int exe_cmd(char *cmd,int x) {
         if (strcmp(args[0],"export")==0){
             char *a=args[1];
             /* */
-            while(*a!='=') a++;
+            while(*a!='=' && *a) a++;
+            if (*a!='=') return CONTINUE;
             *a='\0';
             a=a+1;
             setenv(args[1],a,1);
             return CONTINUE;
         }
+        /**/
+        if (strcmp(args[0],"echo")==0){
+            if (echo(args))
+                return CONTINUE;
+        }
 
 
-
-        if (strcmp(args[0], "exit") == 0)
+        if (strcmp(args[0], "exit") == 0){
             return END;
+        }
+
+
 
         /* 外部命令 */
         pid_t pid = fork();
@@ -257,4 +321,14 @@ int exe_cmd(char *cmd,int x) {
         /* 父进程 */
         wait(NULL);
         return CONTINUE;
+}
+
+int echo(char **args){
+    if (strcmp(args[1],"$PATH")==0){
+        char *pathvar;
+        pathvar = getenv("PATH");
+        printf("%s\n",pathvar);
+        return 1;
+    }
+    else return 0;
 }
