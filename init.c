@@ -113,9 +113,12 @@ int main(){
 
         if (!flag) continue;
 
-        if (run_cmd(num)==END) break;
+        if (run_cmd(num)==END){
+            break;
+        }
 
     }
+    _exit(0);
 }
 
 int run_cmd(int x){
@@ -125,6 +128,7 @@ run_cmd执行一条命令和在其之前的所有命令，
 */
     if (x<0) _exit(0);
     if (x==0 && cmd_redirect[0][0]==0){
+
         return exe_cmd(cmds[0],0);
     }
 
@@ -168,9 +172,9 @@ run_cmd执行一条命令和在其之前的所有命令，
 
 
                 close(fd[1]);
-                //close(fileno(stdin));
+                close(fileno(stdin));
                 dup2(fd[0],fileno(stdin));
-                //close(fd[0]);
+                close(fd[0]);
                 waitpid(pid, NULL, 0);
                 exe_cmd(cmds[x],x);
                  _exit(0);
@@ -271,7 +275,6 @@ int exe_cmd(char *cmd,int x) {
                 }
         args[i] = NULL;
         /* 没有输入命令 */
-
         if (!args[0])
             return CONTINUE;
 
@@ -316,7 +319,7 @@ int exe_cmd(char *cmd,int x) {
             /* 子进程 */
             execvp(args[0], args);
             /* execvp失败 */
-            return 255;
+            _exit(0);
         }
         /* 父进程 */
         wait(NULL);
